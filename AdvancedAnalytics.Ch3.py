@@ -39,7 +39,7 @@ head = rawDataRDD.take(10)
 print head
 
 print "Sampling the dataset to fit into laptop memory..."
-weights = [.1, 0.9]
+weights = [.1, .9]
 seed = 42
 sample, someOtherJunk = rawDataRDD.randomSplit(weights, seed)
 sample.cache()
@@ -104,6 +104,20 @@ def mapSingleObservation(x):
 
 trainData = sample.map(lambda x: mapSingleObservation(x))
 trainData.cache()
+
+# rank = 10
+#   The number of latent factors in the model, or equivalently, the number of columns
+#   k in the user-feature and product-feature matrices. In nontrivial cases, this
+#   is also their rank.
+# iterations = 5
+#   The number of iterations that the factorization runs. More iterations take more
+#   time but may produce a better factorization.
+# lambda = 0.01
+#   A standard overfitting parameter. Higher values resist overfitting, but values that
+#   are too high hurt the factorization’s accuracy.
+# alpha = 1.0
+#   Controls the relative weight of observed versus unobserved user-product interactions
+#   in the factorization.
 
 print "We're finally ready to build the first model! Here goes..."
 model = ALS.trainImplicit(trainData, 10, 5, 0.01)
@@ -226,8 +240,23 @@ cvData.cache()
 allItemIDs = mappedSampleRDD.map(lambda x: x.product).distinct().collect()
 bAllItemIDs = sc.broadcast(allItemIDs)
 
-model = model = ALS.trainImplicit(trainData, 10, 5, 0.01)
+model = ALS.trainImplicit(trainData, 10, 5, 0.01)
 auc = areaUnderCurve(cvData, bAllItemIDs, model.predictAll)
+
+# Now let's run grid search to optimize rank, lambda and alpha hyperparameters.
+# These values are just to get a sense of where we should be heading.
+
+def runGridSearch(rankRange, lambdaRange, alphaRange):
+    for r in rankRange:
+        for l in lambdaRange:
+            for a in alphaRange:
+                model = ALS.trainImplicit(trainData, r, 10, l, -1, a)
+                auc = areaUnderCurve(cvData, bAllItemIDs, model.predictAll)
+                yield ((r, l, a), auc)
+
+evaluations = runGridSearch(rankRange=[10, 50], lambdaRange=[1.0, 0.0001], alphaRange=[1.0, 40.0])
+
+sorted(list(evaluations), key=lambda x: x[1])
 
 
 
